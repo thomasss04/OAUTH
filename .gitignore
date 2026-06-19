@@ -1,3 +1,5 @@
 node_modules/
+agent.js
+generate-keys.js
 .env
 .idea/
