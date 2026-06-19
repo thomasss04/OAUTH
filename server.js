@@ -7,10 +7,16 @@ const GitHubStrategy = require("passport-github2").Strategy;
 
 const app = express();
 
+app.use(express.json());
+
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
-  saveUninitialized: false
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production"
+  }
 }));
 
 app.use(passport.initialize());
@@ -36,7 +42,20 @@ function isIngelogd(req, res, next) {
   if (req.isAuthenticated()) {
     return next();
   }
+
   res.redirect("/");
+}
+
+function checkAgentApiKey(req, res, next) {
+  const apiKey = req.headers["x-api-key"];
+
+  if (!apiKey || apiKey !== process.env.AGENT_API_KEY) {
+    return res.status(401).json({
+      error: "Agent is niet geautoriseerd"
+    });
+  }
+
+  next();
 }
 
 app.get("/", (req, res) => {
@@ -47,6 +66,10 @@ app.get("/", (req, res) => {
     <a href="/auth/github">
       <button>Inloggen voor medewerkers</button>
     </a>
+
+    <hr>
+
+    <p>Agents kunnen data posten naar <code>/api/agent-data</code>, maar alleen met een geldige API-key.</p>
   `);
 });
 
@@ -69,6 +92,12 @@ app.get("/medewerkers", isIngelogd, (req, res) => {
     <p>Welkom, ${req.user.username}.</p>
     <p>Deze pagina is beveiligd met GitHub OAuth 2.0.</p>
 
+    <ul>
+      <li>Alleen ingelogde medewerkers kunnen deze pagina bekijken.</li>
+      <li>De login verloopt via OAuth 2.0.</li>
+      <li>De sessie wordt op de server gecontroleerd.</li>
+    </ul>
+
     <a href="/medewerkers/pagina2">Ga naar beveiligde pagina 2</a><br>
     <a href="/logout">Uitloggen</a>
   `);
@@ -77,12 +106,30 @@ app.get("/medewerkers", isIngelogd, (req, res) => {
 app.get("/medewerkers/pagina2", isIngelogd, (req, res) => {
   res.send(`
     <h1>Medewerkerspagina 2</h1>
-    <p>Ook deze pagina is afgeschermd.</p>
-    <p>Alleen ingelogde medewerkers kunnen deze pagina zien.</p>
+    <p>Ook deze pagina is beveiligd.</p>
+    <p>Je kunt deze pagina alleen bereiken als je bent ingelogd.</p>
 
     <a href="/medewerkers">Terug naar pagina 1</a><br>
     <a href="/logout">Uitloggen</a>
   `);
+});
+
+app.post("/api/agent-data", checkAgentApiKey, (req, res) => {
+  const data = req.body;
+
+  console.log("Data ontvangen van agent:", data);
+
+  res.json({
+    message: "Data veilig ontvangen van agent",
+    beveiliging: "API-key gecontroleerd",
+    received: data
+  });
+});
+
+app.get("/api/agent-data", (req, res) => {
+  res.status(405).json({
+    error: "Gebruik POST met een geldige X-API-Key header"
+  });
 });
 
 app.get("/logout", (req, res) => {
